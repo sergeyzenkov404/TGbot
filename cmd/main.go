@@ -2,6 +2,7 @@ package main
 
 import (
 	"TGbot/pkg/api"
+	"TGbot/pkg/db"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -18,7 +19,7 @@ import (
 
 const (
 	urlMeteoMinsk = "https://api.open-meteo.com/v1/forecast?current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&latitude=53.9006&longitude=27.5590"
-	urlTG         = "https://api.telegram.org/bot8713578224:"
+	urlTG         = "https://api.telegram.org/bot"
 	urlFL         = "https://api.fantlab.ru/"
 	PSQLsourse    = "postgres://router_go:root@127.0.0.1:5432/router_go"
 	hiHelp        = `Бот может:
@@ -27,35 +28,7 @@ const (
 -дать информации о книге или авторе`
 )
 
-type MessBody struct {
-	ChatId int    `json:"chat_id"`
-	Text   string `json:"text"`
-}
-
-type User struct {
-	Id         int    `json:"id"`
-	Username   string `json:"username"`
-	First_name string `json:"first_name"`
-	Is_premium bool   `json:"is_premium"`
-}
-
-type Message struct {
-	Message_id int    `json:"message_id"`
-	From       User   `json:"from"`
-	Text       string `json:"text"`
-	// Document       Document `json:"document"`
-}
-
-type Update struct {
-	Update_id int     `json:"update_id"`
-	Message   Message `json:"message"`
-}
-type TelegramResponse struct {
-	Ok     bool     `json:"ok"`
-	Result []Update `json:"result"`
-}
-
-func GetUpdate(client *http.Client, url string, offset int) []Update {
+func GetUpdate(client *http.Client, url string, offset int) []api.Update {
 	reqUrl := fmt.Sprintf("%sgetUpdates?offset=%d&timeout=100", url, offset)
 	mes, err := client.Get(reqUrl)
 	if err != nil {
@@ -65,7 +38,7 @@ func GetUpdate(client *http.Client, url string, offset int) []Update {
 
 	defer mes.Body.Close()
 
-	var resp TelegramResponse
+	var resp api.TelegramResponse
 	err = json.NewDecoder(mes.Body).Decode(&resp)
 	if err != nil {
 		log.Println("error decod: ", err)
@@ -75,41 +48,8 @@ func GetUpdate(client *http.Client, url string, offset int) []Update {
 	return resp.Result
 }
 
-func SavMes(dbpool *pgxpool.Pool, mes Message) error {
-	trans1, err := dbpool.Begin(context.Background())
-	if err != nil {
-		return fmt.Errorf("trans error %w", err)
-	}
-	defer trans1.Rollback(context.Background())
-	userTr := `
-		INSERT INTO tg_users (id, username, first_name)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (id) 
-		DO UPDATE SET username = EXCLUDED.username, first_name = EXCLUDED.first_name;
-	`
-	mesTr := `
-		INSERT INTO message_history (user_id, text_content)
-		VALUES ($1, $2);
-	`
-	//log.Println(mes.From.First_name)
-	_, err = trans1.Exec(context.Background(), userTr, mes.From.Id, mes.From.Username, mes.From.First_name)
-	if err != nil {
-		return fmt.Errorf("user error %w", err)
-	}
-
-	_, err = trans1.Exec(context.Background(), mesTr, mes.From.Id, mes.Text)
-	if err != nil {
-		return fmt.Errorf("text error %w", err)
-	}
-	err = trans1.Commit(context.Background())
-	if err != nil {
-		return fmt.Errorf("not commited %w", err)
-	}
-	return nil
-}
-
 func SendMes(client *http.Client, url string, chat_id int, text string) {
-	body := MessBody{
+	body := api.MessBody{
 		ChatId: chat_id,
 		Text:   text,
 	}
@@ -127,16 +67,7 @@ func SendMes(client *http.Client, url string, chat_id int, text string) {
 	fmt.Println("Статус отправки:", send.StatusCode)
 }
 
-func WorkerDB(dbpool *pgxpool.Pool, mes <-chan Message) {
-	for m := range mes {
-		err := SavMes(dbpool, m)
-		if err != nil {
-			fmt.Println("messege error: ", err)
-		}
-	}
-}
-
-func WorkerBot(client *http.Client, mes <-chan Message) {
+func WorkerBot(client *http.Client, mes <-chan api.Message) {
 	clientMeteo := &http.Client{
 		Timeout: 1000 * time.Second,
 	}
@@ -184,11 +115,11 @@ func main() {
 	}
 	defer dbpool.Close()
 
-	dbChan := make(chan Message, 20)
-	botChan := make(chan Message, 20)
+	dbChan := make(chan api.Message, 20)
+	botChan := make(chan api.Message, 20)
 
 	go WorkerBot(client, botChan)
-	go WorkerDB(dbpool, dbChan)
+	go db.WorkerDB(dbpool, dbChan)
 
 	for {
 		upd := GetUpdate(client, urlTG+tokenTG+"/", offset)

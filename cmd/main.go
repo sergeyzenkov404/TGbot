@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/joho/godotenv"
 )
 
 const (
@@ -138,6 +140,11 @@ func WorkerBot(client *http.Client, mes <-chan Message) {
 	clientMeteo := &http.Client{
 		Timeout: 1000 * time.Second,
 	}
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal(err)
+	}
+	tokenTG := os.Getenv("tg")
 	for m := range mes {
 		mesText := strings.ToLower(m.Text)
 		switch {
@@ -151,10 +158,10 @@ func WorkerBot(client *http.Client, mes <-chan Message) {
 			if err != nil {
 				fmt.Println("json Meteo error: ", err)
 			}
-			SendMes(client, urlTG+"/sendMessage", m.From.Id, fmt.Sprintf("Температура воздуха в минске %.2f%s, сторость ветра %.2f%s", bodyMeteo.Current.Temperature, bodyMeteo.CurrentUnits.Temperature, bodyMeteo.Current.Wind, bodyMeteo.CurrentUnits.Wind))
-			SendMes(client, urlTG+"/sendMessage", m.From.Id, fmt.Sprintf("Текущее время %s по UTC", bodyMeteo.Current.Time))
+			SendMes(client, urlTG+tokenTG+"/sendMessage", m.From.Id, fmt.Sprintf("Температура воздуха в минске %.2f%s, сторость ветра %.2f%s", bodyMeteo.Current.Temperature, bodyMeteo.CurrentUnits.Temperature, bodyMeteo.Current.Wind, bodyMeteo.CurrentUnits.Wind))
+			SendMes(client, urlTG+tokenTG+"/sendMessage", m.From.Id, fmt.Sprintf("Текущее время %s по UTC", bodyMeteo.Current.Time))
 		case strings.Contains(mesText, "/help"):
-			SendMes(client, urlTG+"sendMessage", m.From.Id, hiHelp)
+			SendMes(client, urlTG+tokenTG+"/sendMessage", m.From.Id, hiHelp)
 		}
 	}
 }
@@ -163,7 +170,11 @@ func main() {
 	client := &http.Client{
 		Timeout: 1000 * time.Second,
 	}
-
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal(err)
+	}
+	tokenTG := os.Getenv("tg")
 	offset := 0
 	//PSQLsourse = "postgres://router_go:root@127.0.0.1:5432/router_go"
 	dbpool, err := pgxpool.New(context.Background(), PSQLsourse)
@@ -180,7 +191,7 @@ func main() {
 	go WorkerDB(dbpool, dbChan)
 
 	for {
-		upd := GetUpdate(client, urlTG, offset)
+		upd := GetUpdate(client, urlTG+tokenTG+"/", offset)
 
 		for _, update := range upd {
 			if update.Message.Text != "" {

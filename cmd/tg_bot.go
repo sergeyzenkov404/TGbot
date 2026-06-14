@@ -1,6 +1,7 @@
 package main
 
 import (
+	"TGbot/pkg/api"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -15,7 +16,7 @@ import (
 
 const (
 	urlMeteoMinsk = "https://api.open-meteo.com/v1/forecast?current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&latitude=53.9006&longitude=27.5590"
-	urlTG         = "https://api.telegram.org/bot8713578224:AAFgPWh0pwG3Qr08XYmbhM7pavC26PSz69U/"
+	urlTG         = "https://api.telegram.org/bot8713578224:"
 	urlFL         = "https://api.fantlab.ru/"
 	PSQLsourse    = "postgres://router_go:root@127.0.0.1:5432/router_go"
 	hiHelp        = `Бот может:
@@ -50,23 +51,6 @@ type Update struct {
 type TelegramResponse struct {
 	Ok     bool     `json:"ok"`
 	Result []Update `json:"result"`
-}
-
-type MeteoResponse struct {
-	TimeZone     string            `json:"timezone"`
-	Current      CurrentValueMeteo `json:"current"`
-	CurrentUnits CurrentUnitsMeteo `json:"current_units"`
-}
-
-type CurrentValueMeteo struct {
-	Time        string  `json:"time"`
-	Temperature float64 `json:"temperature_2m"`
-	Wind        float64 `json:"wind_speed_10m"`
-}
-type CurrentUnitsMeteo struct {
-	Time        string `json:"time"`
-	Temperature string `json:"temperature_2m"`
-	Wind        string `json:"wind_speed_10m"`
 }
 
 func GetUpdate(client *http.Client, url string, offset int) []Update {
@@ -162,13 +146,13 @@ func WorkerBot(client *http.Client, mes <-chan Message) {
 			if err != nil {
 				fmt.Println("ask error: ", err)
 			}
-			var bodyMeteo MeteoResponse
+			var bodyMeteo api.MeteoResponse
 			err = json.NewDecoder(askMeteo.Body).Decode(&bodyMeteo)
 			if err != nil {
 				fmt.Println("json Meteo error: ", err)
 			}
-			SendMes(client, urlTG+"sendMessage", m.From.Id, fmt.Sprintf("Температура воздуха в минске %.2f%s, сторость ветра %.2f%s", bodyMeteo.Current.Temperature, bodyMeteo.CurrentUnits.Temperature, bodyMeteo.Current.Wind, bodyMeteo.CurrentUnits.Wind))
-			SendMes(client, urlTG+"sendMessage", m.From.Id, fmt.Sprintf("Текущее время %s по UTC", bodyMeteo.Current.Time))
+			SendMes(client, urlTG+"/sendMessage", m.From.Id, fmt.Sprintf("Температура воздуха в минске %.2f%s, сторость ветра %.2f%s", bodyMeteo.Current.Temperature, bodyMeteo.CurrentUnits.Temperature, bodyMeteo.Current.Wind, bodyMeteo.CurrentUnits.Wind))
+			SendMes(client, urlTG+"/sendMessage", m.From.Id, fmt.Sprintf("Текущее время %s по UTC", bodyMeteo.Current.Time))
 		case strings.Contains(mesText, "/help"):
 			SendMes(client, urlTG+"sendMessage", m.From.Id, hiHelp)
 		}
